@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from todo.models import db
 from todo.models.todo import Todo
-from datetime import datetime
+from datetime import datetime, timedelta
  
 api = Blueprint('api', __name__, url_prefix='/api/v1') 
 
@@ -26,18 +26,36 @@ def get_todos():
     todos = Todo.query.all()
     result = []
     for todo in todos:
-        result.append(todo.to_dict())
+        if len(request.args) == 0:
+            result.append(todo.to_dict())
+        else:
+            for parameter in request.args:
+                if parameter == "window":
+                    if (datetime.strptime(todo.to_dict()["deadline_at"], "%Y-%m-%dT00:00:00") - datetime.now()).days < int(request.args[parameter]):
+                        result.append(todo.to_dict())
+                elif str(todo.to_dict()[parameter]).lower() == request.args[parameter].lower():
+                    result.append(todo.to_dict())
     return jsonify(result)
 
 @api.route('/todos/<int:todo_id>', methods=['GET'])
 def get_todo(todo_id):
     todo = Todo.query.get(todo_id)
     if todo is None:
-        return jsonify({'error', 'Todo not found'}), 404
+        return 'Todo not found', 404
     return jsonify(todo.to_dict())
 
 @api.route('/todos', methods=['POST'])
 def create_todo():
+    lines = ["id", "title", "description", "completed", "deadline_at"]
+    for line in request.json:
+        if line not in lines:
+            return jsonify({'error': 'Todo has invalid line'}), 400
+
+        lines.remove(line)
+
+    if "title" in lines:
+        return jsonify({'error': 'Todo has no title'}), 400
+    
     todo = Todo(
         title=request.json.get('title'),
         description=request.json.get('description'),
@@ -58,6 +76,11 @@ def update_todo(todo_id):
     todo = Todo.query.get(todo_id)
     if todo is None:
         return jsonify({'error': 'Todo not found'}), 404
+    for line in request.json:
+        if line == "id":
+            return jsonify({'error': 'Todo contains id'}), 400
+        if line not in ["title", "description", "completed", "deadline_at"]:
+            return jsonify({'error': 'Todo has invalid line'}), 400
     
     todo.title = request.json.get('title', todo.title)
     todo.description = request.json.get('description', todo.description)
@@ -65,7 +88,7 @@ def update_todo(todo_id):
     todo.deadline_at = request.json.get('deadline_at', todo.deadline_at)
     db.session.commit()
 
-    return jsonify(TEST_ITEM)
+    return jsonify(todo.to_dict())
 
 @api.route('/todos/<int:todo_id>', methods=['DELETE'])
 def delete_todo(todo_id):
@@ -76,5 +99,5 @@ def delete_todo(todo_id):
     db.session.delete(todo)
     db.session.commit()
 
-    return jsonify(TEST_ITEM)
+    return jsonify(todo.to_dict())
  
